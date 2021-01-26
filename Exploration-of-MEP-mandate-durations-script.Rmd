@@ -1,0 +1,413 @@
+# Exploring MEP mandate durations between 1952 and 2014
+
+## Introduction
+
+The European Parliament (EP) is part of the legislative branch of the European Union (EU) and has been its core institution representing one of the largest electorates in the world. The institution traces its origins back to 1952 when it began as the Common Assembly of the European Coal and Steel Community, in 1962 was renamed to its current name, and in 1979 the first direct elections of its members were held. Members of the European Parliament (MEPs) are elected every five years, and hold a mandate representing their national parties. However, MEPs also form political parties within the EP, furthermore these parties organise along party groups which group together EP parties from similar political ideologies (committee and members, 2021). 
+
+The following project attempts to explore multiple aspects of MEP mandates, including trends relating to their duration, and reveal broader movements and shifts across the historical political group formations within the EP. Although data relating to the EP's specific political parties is available, tracing quantitative trends across these parties often proves problematic as individual EP parties are highly fluid in nature as their composition varies significanly between legislative periods due to frequent movements of MEPs between parties (Evans and Vink, 2012, p. 93). Broader political groups within the EP on the other hand prove to be a more reliable object of study as the composition of EP parties contained within them may change, the political groups themselves remain constant. For this reason the second part of this project focuses on the broader political groups of the EP and explores their size given quantified by active mandates through time. 
+
+
+
+## Dataset
+
+```{r European Parliament MEP list import, message=FALSE, warning=FALSE}
+
+# Import dataset and skip first row to make second row the column names
+MEP_list <- read_excel('../data/EP-PE_LMEPS(1979)0001_XL.xls', col_names = TRUE, skip = 1)
+
+# Rename column names to english
+
+MEP_list <- MEP_list %>%
+  rename(
+    `MEP name` = `NOM`, #`Députés au Parlement européen depuis le 17.07.1979\n(Situation: 30.06.2014)\n`
+    `member state` = `État membre`,
+    `national political party` = `Parti politique national*`,
+    `european political party` = `Groupe politique*`,
+    `mandate` = `Mandats`
+  )
+
+# Excel table was read faulty, MEPs with two or more non-consecutive terms are split into as many lines but following line or lines has N/A as MEP name
+
+# using the na.locf() function carry the previous value into the cell whith missing value. This creates duplicates in the MEP name column which has to be kept in mind
+
+# for MEP names
+MEP_list$`MEP name` <- MEP_list$`MEP name` %>%
+  na.locf(na.rm=F)
+
+# for member state
+MEP_list$`member state` <- MEP_list$`member state` %>%
+  na.locf(na.rm=F)
+
+# for national political party
+MEP_list$`national political party` <- MEP_list$`national political party` %>%
+  na.locf(na.rm=F)
+
+# for european political party
+MEP_list$`european political party` <- MEP_list$`european political party` %>%
+  na.locf(na.rm=F)
+
+# Separate mandate column into start date and end date columns
+
+MEP_list <- MEP_list %>% separate(mandate, c("start_mandate", "end_mandate"), "-")  
+  
+# start_mandate
+MEP_list$start_mandate <- parse_date(MEP_list$start_mandate, "%d.%m.%Y")
+
+# end_mandate
+MEP_list$end_mandate <- parse_date(MEP_list$end_mandate, "%d.%m.%Y")
+
+# Calculate mandate duration in days by subtracting the start date from the end date 
+MEP_list <- MEP_list %>%
+  mutate(
+    mandate_duration = end_mandate - start_mandate
+  ) 
+```
+
+A database of MEPs from all parliamentary terms from 1952 to 2014 taken from the EU Open Data Portal was used as the dataset for this project (European Parliament, 2015). The dataset is made up of 3230 lines, each corresponding to an MEP who held a mandate between 1952 and 2014. Variables included are their name, corresponding member state, national political party, EP parliamentary group, and a single variable of dates - when they started and ended their mandates.
+
+As the dataset was written in French, variable names first had to be translated to English. Becuase the dataset was made for human readability, MEPs with multiple non-consecutive mandates had their 'mandates' cell split into two two or more, which meant that the read_excel function created new lines for each occurance of a 'mandate' cell being split. This resulted in lines of data with all variables missing apart from the corresponding mandate. All N/A values in these faulty lines were filled with the information contained in the cell above them using the na.locf function included in the zoo library. As the newly created lines were just another mandate of the same MEP, this method was an easy fix for the issue.  
+
+As both starting and ending dates for mandates were stored as a single variable, the separate() function was used to separate the 'mandates' column into a 'start_mandate' and 'end_mandate' column with corresponding dates in each. Next, both newly created columns were parsed as dates with the parse_date() function. Additionally, an extra variable was created by subtracting end dates from start dates to see how long each mandate lasted. 
+
+
+
+
+## Methodolgy and Findings
+
+### Summary statistics of mandate durations
+
+In this section summary statistics were produced to explore the relationships between member states and mandates. 
+
+```{r EP MEP mandate summary statistics, message=FALSE, warning=FALSE}
+
+# Bar chart of number of mandates by member state
+state_count <- MEP_list %>%
+  count(`member state`)
+
+state_count %>%
+  ggplot(mapping = aes(x = reorder(`member state`, -n), y = n)) +
+  geom_col() +
+  ggtitle("Number of mandates for each member state", subtitle ="1952 to 2014") +
+  xlab("Member states") +
+  ylab("Number of mandates") +
+  theme_bw() +
+  labs(caption = "Figure 1.1") +
+  theme(plot.caption = element_text(face = "italic"))
+
+
+  
+
+# Create summary statistics for each member state mandate duration and plot all summary statistic on a single plot
+stuff <- MEP_list %>%
+  group_by(`member state`) %>%
+  summarize(
+    mean = round(mean(mandate_duration, na.rm=T)), 
+    median = round(median(mandate_duration, na.rm=T)),
+    max = max(mandate_duration, na.rm=T)
+  )
+
+MEP_list %>%
+  group_by(`member state`) %>%
+  summarize(
+    mean = round(mean(mandate_duration, na.rm=T)), 
+    median = round(median(mandate_duration, na.rm=T)),
+    max = max(mandate_duration, na.rm=T)
+  ) %>%
+  ggplot(aes(x = `member state`)) +
+  geom_point(aes(y = mean, color = "blue")) +
+  geom_point(aes(y = median, color = "red")) +
+  geom_point(aes(y = max, color = "#34CC1E")) +
+  theme_bw() +
+  labs(caption = "Figure 1.2") +
+  xlab("Member states") +
+  ylab("Mandate duration in days") +
+  scale_color_discrete(name = "Summary statistics", labels = c("Maximum", "Mean", "Median")) +
+  theme(axis.text.x = element_text(size = 8), plot.caption = element_text(face = "italic")) +
+  ggtitle("Summary statistics for mandate duration by member state", subtitle ="1952 to 2014")
+
+
+
+  
+```
+After producing a count for how many times each member state is present in the dataset a bar chart from the ggplot2 library was used to plot the created counts. As visible on the first figure, France and Italy had the highest number of MEP mandates between 1952 and 2014. This is not surprising as both states were founding members of the European Coal and Steel Community and both have had a similar amount of MEP seats. Interestingly however, Germany has had significantly less MEP mandates, even though West Germany was a founding member with a similar population to both Italy and France. 
+
+The approach in the following analysis was to group the dataset by member states and produce the mean, the median, and the maximum of mandate durations. Using the summarize function from the dplyr library (after grouping the dataset by member states using the group_by function), the afore mentioned summary statistics were produced. Figure 1.2 shows the summary values plotted on a single graph. Although studying mandate lengths may seem pointless as MEPs are elected for 5 year terms, the data found in the dataset yields varied findings. It is discernable from these statistics that MEPs from Great Britain have held the longest mandates on average, followed by Germany who has also had the MEP with the longest mandate. For most member states the median and mean values are quite close together, both around the five year mark (1825 days), which means that most can be fit to a normal distribution, however, as visible from the variance in means and medians the 5 year mark as an exact period does not provide a strict measure reflecting reality. 
+
+
+### Tracing the number of active mandates in political groups
+
+This section took broader European Parliamentary Groups (EPG) as its focus of analysis. Political parties of the EP and their broader coalitions have historically always changed regularly due to party realignments during campaigns for EP elections, national level changes and overall EP party relations (Evans and Vink, 2012, p. 109). This is why the following analysis took as its object EPGs, which are easier to trace historically. The EPGs this analysis categorised EP parties into are as follows: Christian Democrats and Conservatives, Social Democrats, Liberals and centrists, Eurosceptic Conservatives, Greens and regionalists, Communists and Socialists, Far-right nationalists, and Eurosceptics (Political groups of the EP, 2011). Although not all EP parties are included in these EPGs, their vast majority can be categorized along these ideological lines. The following analysis attempts to explore how the number of mandates belonging to these ideological groups have changed over time. 
+
+
+```{r European Parliament MEP mandate frequency data frame creation, message=FALSE, warning=FALSE}
+
+# create vector of EP parties for each EPG
+
+CDCs <- c("PPE", "PPE-DE", "ED")
+EURSCs <- c("EDD", "EFD", "I-EDN", "IND/DEM")
+SDs <- c("PSE", "S&D", "S")
+LCs <- c("ALDE", "ARE", "ELDR", "L", "LDR")
+ECs <- c("DEP", "ECR", "RDE", "UEN", "UPE")
+GRs <- c("ARC", "V", "Verts.ALE", "VERS/ALE")
+CSs <- c("CG", "COM", "GUE", "GUE.NGL")
+
+
+
+#1 ################ PPE and PPE-DE and ED # Christian Democrats and Conservatives  ################
+
+# create list of CDC MEPs
+CDC_ALL <- MEP_list %>%
+  subset(`european political party` %in% CDCs)
+
+# Create two columns, one for start dates and one for end dates. Delete the rest of the columns. 
+CDC_ALL <- CDC_ALL %>%  
+transmute(
+    START = CDC_ALL$start_mandate,
+    END = CDC_ALL$end_mandate
+    )
+
+# Replace N/A end dates with 2014-07-01
+CDC_ALL$END <- replace_na(CDC_ALL$END, as.Date("2014-07-01"))
+
+# Create frequency for how many MEPs mandates are included on each date and rename columns
+CDC_MEP_count_by_day <- as.data.frame(table(Reduce(c, Map(seq, CDC_ALL$START, CDC_ALL$END, by = "days"))))
+colnames(CDC_MEP_count_by_day)[1] = "dates"
+colnames(CDC_MEP_count_by_day)[2] = "mep_amount"
+
+
+# parse dates again
+CDC_MEP_count_by_day$dates <- as.Date(CDC_MEP_count_by_day$dates)
+
+
+#2 ################ PSE and S and S&D # Social Democrats  ################
+
+
+SD_ALL <- MEP_list %>%
+  subset(`european political party` %in% SDs)
+
+SD_ALL <- SD_ALL %>%
+  transmute(
+    START = SD_ALL$start_mandate,
+    END = SD_ALL$end_mandate)
+
+SD_ALL$END <- replace_na(SD_ALL$END, as.Date("2014-07-01"))
+
+SD_MEP_count_by_day <- as.data.frame(table(Reduce(c, Map(seq, SD_ALL$START, SD_ALL$END, by = "days"))))
+colnames(SD_MEP_count_by_day)[1] = "dates"
+colnames(SD_MEP_count_by_day)[2] = "mep_amount"
+
+SD_MEP_count_by_day$dates <- as.Date(SD_MEP_count_by_day$dates)
+
+
+#3 ################ ALDE, ARE, ELDR, L and LDR # Liberals and centrists ################
+
+
+LC_ALL <- MEP_list %>%
+  subset(`european political party` %in% LCs)
+
+LC_ALL <- LC_ALL %>%
+  transmute(
+      START = LC_ALL$start_mandate,
+      END = LC_ALL$end_mandate
+  )
+  
+
+LC_ALL$END <- replace_na(LC_ALL$END, as.Date("2014-07-01"))
+
+LC_MEP_count_by_day <- as.data.frame(table(Reduce(c, Map(seq, LC_ALL$START, LC_ALL$END, by = "days"))))
+colnames(LC_MEP_count_by_day)[1] = "dates"
+colnames(LC_MEP_count_by_day)[2] = "mep_amount"
+
+LC_MEP_count_by_day$dates <- as.Date(LC_MEP_count_by_day$dates)
+
+################ DEP, ECR, RDE, UEN, UPE # Eurosceptic Conservatives  ################
+
+
+EC_ALL <- MEP_list %>%
+  subset(`european political party` %in% ECs)
+
+EC_ALL <- EC_ALL %>%  
+transmute(
+    START = EC_ALL$start_mandate,
+    END = EC_ALL$end_mandate
+    )
+
+EC_ALL$END <- replace_na(EC_ALL$END, as.Date("2014-07-01"))
+
+EC_MEP_count_by_day <- as.data.frame(table(Reduce(c, Map(seq, EC_ALL$START, EC_ALL$END, by = "days"))))
+colnames(EC_MEP_count_by_day)[1] = "dates"
+colnames(EC_MEP_count_by_day)[2] = "mep_amount"
+
+EC_MEP_count_by_day$dates <- as.Date(EC_MEP_count_by_day$dates)
+
+################ ARC, V, and Verts.ALE and Verts/ALE # Greens and Regionalists  ################
+
+
+GR_ALL <- MEP_list %>%
+  subset(`european political party` %in% GRs)
+
+GR_ALL <- GR_ALL %>%  
+transmute(
+    START = GR_ALL$start_mandate,
+    END = GR_ALL$end_mandate
+    )
+
+GR_ALL$END <- replace_na(GR_ALL$END, as.Date("2014-07-01"))
+
+GR_MEP_count_by_day <- as.data.frame(table(Reduce(c, Map(seq, GR_ALL$START, GR_ALL$END, by = "days"))))
+colnames(GR_MEP_count_by_day)[1] = "dates"
+colnames(GR_MEP_count_by_day)[2] = "mep_amount"
+
+GR_MEP_count_by_day$dates <- as.Date(GR_MEP_count_by_day$dates)
+
+################ CG, COM, and GUE and GUE.NGL # Communists and Socialists  ################
+
+
+CS_ALL <- MEP_list %>%
+  subset(`european political party` %in% CSs)
+
+CS_ALL <- CS_ALL %>%  
+transmute(
+    START = CS_ALL$start_mandate,
+    END = CS_ALL$end_mandate
+    )
+
+CS_ALL$END <- replace_na(CS_ALL$END, as.Date("2014-07-01"))
+
+CS_MEP_count_by_day <- as.data.frame(table(Reduce(c, Map(seq, CS_ALL$START, CS_ALL$END, by = "days"))))
+colnames(CS_MEP_count_by_day)[1] = "dates"
+colnames(CS_MEP_count_by_day)[2] = "mep_amount"
+
+CS_MEP_count_by_day$dates <- as.Date(CS_MEP_count_by_day$dates)
+
+################ DR # Far right nationalists  ################
+
+FRN_ALL <- MEP_list %>%
+  filter(`european political party` == "DR")
+
+FRN_ALL <- FRN_ALL %>%  
+transmute(
+    START = FRN_ALL$start_mandate,
+    END = FRN_ALL$end_mandate
+    )
+
+FRN_ALL$END <- replace_na(FRN_ALL$END, as.Date("2014-07-01"))
+
+FRN_MEP_count_by_day <- as.data.frame(table(Reduce(c, Map(seq, FRN_ALL$START, FRN_ALL$END, by = "days"))))
+colnames(FRN_MEP_count_by_day)[1] = "dates"
+colnames(FRN_MEP_count_by_day)[2] = "mep_amount"
+
+FRN_MEP_count_by_day$dates <- as.Date(FRN_MEP_count_by_day$dates)
+
+################ EDD, EFD, I-EDN, and IND/DEM # Eurosceptics ################
+
+
+EURSC_ALL <- MEP_list %>%
+  subset(`european political party` %in% EURSCs)
+
+EURSC_ALL <- EURSC_ALL %>%  
+transmute(
+    START = EURSC_ALL$start_mandate,
+    END = EURSC_ALL$end_mandate
+    )
+
+EURSC_ALL$END <- replace_na(EURSC_ALL$END, as.Date("2014-07-01"))
+
+EURSC_MEP_count_by_day <- as.data.frame(table(Reduce(c, Map(seq, EURSC_ALL$START, EURSC_ALL$END, by = "days"))))
+colnames(EURSC_MEP_count_by_day)[1] = "dates"
+colnames(EURSC_MEP_count_by_day)[2] = "mep_amount"
+
+EURSC_MEP_count_by_day$dates <- as.Date(EURSC_MEP_count_by_day$dates)
+
+
+
+```
+
+First, vectors were created for each EPG containing the abbreviations of EP parties which belonged to them. Second, the following steps were repeated for each EPG. Using the subset function the MEP list was filtered to MEPs contained in the corresponding EPG. The start and end dates of mandates were taken from the dataset, all undefined end dates, meaning those MEPs who were still in office when the adopted dataset was created, were replaced with the last recorded date in the dataset. Using the table function a contingency table was built with the map and reduce functions to produce a data frame with two variables; dates of days ranging from 1979 to 2014 and the frequency of how many MEP's mandates were active on given dates.
+
+
+```{r Stuff, message=FALSE, warning=FALSE}
+
+
+
+
+# Add all MEP frequencies by date to one dataframe
+MEP_numbers <- rbind(CDC_MEP_count_by_day, SD_MEP_count_by_day, LC_MEP_count_by_day, EC_MEP_count_by_day, GR_MEP_count_by_day, CS_MEP_count_by_day, FRN_MEP_count_by_day, EURSC_MEP_count_by_day)
+
+# Add EPD abbreviation to each Frequency to signal which group it belongs to
+MEP_numbers$Group <- c(rep("Christian Democrats and Conservatives", nrow(CDC_MEP_count_by_day)), rep("Social Democrats", nrow(SD_MEP_count_by_day)), rep("Liberals and centrists", nrow(LC_MEP_count_by_day)), rep("Eurosceptic Conservatives", nrow(EC_MEP_count_by_day)), rep("Greens and regionalists", nrow(GR_MEP_count_by_day)), rep("Communists and Socialists", nrow(CS_MEP_count_by_day)), rep("Far-right Nationalists", nrow(FRN_MEP_count_by_day)), rep("Eurosceptics", nrow(EURSC_MEP_count_by_day)))
+
+
+# Plot all 8 EPD mandate frequencies over time as a line
+MEP_numbers %>%
+  ggplot(mapping = aes(x = dates)) + 
+  ylab("Active mandates") +
+  geom_line(aes(y = mep_amount, color = Group), size = 0.5) +
+  scale_x_date(name="Time", breaks = "5 years", date_labels = "%Y", limit=c(as.Date("1979-07-10"),as.Date("2014-06-30"))) +
+  scale_color_manual(values = c("steelblue", "orange", "darkblue", "pink", "grey", "green", "purple", "red")) +
+  theme_bw() +
+  ggtitle("Active mandates by EP political groups over time", subtitle = "1979 to 2014") +
+  labs(caption = "Figure 2.1") +
+  theme(plot.caption = element_text(face = "italic"))
+
+MEP_numbers %>%
+  filter(Group == "Christian Democrats and Conservatives" | Group == "Social Democrats") %>%
+  ggplot(mapping = aes(x = dates)) + 
+  ylab("Active mandates") +
+  geom_line(aes(y = mep_amount, color = Group), size = 0.7) +
+  scale_x_date(name="Time", breaks = "5 years", date_labels = "%Y", limit=c(as.Date("2003-06-10"),as.Date("2010-01-30"))) +
+  scale_color_manual(values = c("steelblue", "red")) +
+  theme_bw() +
+  ggtitle("Active mandates of Christian Democrats and Conservatives and Social Democrats", subtitle = "2003 to 2010") +
+  theme(plot.title = element_text(size = 12)) +
+  ylim(150, 300) +
+  labs(caption = "Figure 2.2") +
+  theme(plot.caption = element_text(face = "italic"))
+
+
+MEP_numbers %>%
+  filter(Group == "Far-right Nationalists" | Group == "Eurosceptics") %>%
+  ggplot(mapping = aes(x = dates)) + 
+  ylab("Active mandates") +
+  geom_line(aes(y = mep_amount, color = Group), size = 1) +
+  scale_x_date(name="Time", breaks = "5 years", date_labels = "%Y", limit=c(as.Date("1980-06-10"),as.Date("2002-06-30"))) +
+  scale_color_manual(values = c("pink", "darkgrey")) +
+  theme_bw() +
+  ggtitle("Active mandates of Far-right Nationalists and Eurosceptics", subtitle = "1980 to 2002") +
+  ylim(0, 30) +
+  labs(caption = "Figure 2.3") +
+  theme(plot.caption = element_text(face = "italic"))
+
+
+```
+
+Once all EPGs' mandate frequencies by date were stored in new data frames, those data frames were combined into a single one with the same two variables, one for days as dates, and one for each EPG's mandate frequency for each day. Another variable was added which contains the abbreviation of the given EPG for reference. Following the creation of these new data frames the frequency of active mandates for each EPG could be plotted on the same graph as seen on figure 2.1. 
+
+At first sight the cyclical legislative periods are visible from MEP frequencies. The timespan included in Figure 2.1 comprises seven legislatures and at the beginning and end of each legislature (5 year periods) each EPG's frequency of active mandates jumps. At the beginning of some legislatures the number of MEPs in the EP was changed which often adds to the stark changes in frequencies. Subtle details are discernable from the ever changing frequencies during legislatures, even if slightly, which are all testament to the ever changing nature of the EP, MEPs come and go frequently. 
+
+The obvious finding from comparing EPGs is that the Christian Democrat and Conservative group and the Social Democrats group have historically held the majority of seats in the EP. Interestingly after the 2004 elections both groups' active mandates jump by nearly a hundered and then fall back by about fifty after a few weeks as seen on Figure 2.2. 2004 saw several European countries join the EU, many of which had national parties which joined the two EPGs, so a rise in both group memberships is easily explained, however, the sudden drop in both groups after a few weeks is an interesting phenomenon perhaps explained by an overlap of mandate dates.
+
+The far-right nationalist movement failed to build a coherent group during the first half of the 1990's and dissolved in 1994 (News.bbc.co.uk., 2021). On Figure 2.3 it is clearly visible that following the legislative elections in 1994 the Far-right Nationalist EPG dissolves, however, the group of Eurosceptics' mandate count jumps considerably, a phenomenon which is possibly explained by MEPs moving from the former to the latter. 
+
+Several from the myriad of potential questions which could be raised by this analysis include: why did the Greens and regionalists group decline in numbers in such an even manner between 1997 and 2004? Which parties were responsible for the mid-legislation spike in the Liberals and centrist group in 2007, and what explains the parallel changes in MEP numbers between the Christian Democrats and Conservatives and the Social Democrats following 2012? All these and many more questions deserve further scrutiny, and could serve as starting points for hypothesis driven research.
+
+## Conclusions and limitations
+
+Although the analysis of MEP mandates by individual member states yielded interesting results, findings from the two analytical approaches are general and vague. Even though conclusions such as Great Britain having had the longest serving MEP or that most MEPs hold mandates for the duration of approximately 5 years could be made, many of the underlying dynamics relating to such summaries were not explored by this project. Nonetheless, much of the findings in the first part of this project reflect the realities of EU politics braodly. As mentioned at the start, the analysis of individual EP parties is problematic as they are fluid in nature and are connected through complicated political ties. Their analysis, however, could be been done using the dataset adopted by this project, but would require considerably more research into the political dynamics of the EP and a more complex code structure. Nevertheless, by grouping EP parties according to their European Political Groups, interesting trends were found and many questions raised. Some realities of the EP such as Christian Democrats and Conservatives and Social Democrats historically holding the majority of seats in the governance of European politics were found proof for from this analysis and further interesting changes in MEP numbers accross EPGs were visualised successfully. 
+
+
+
+## References
+
+committee and members, R., 2021. About | Meps | European Parliament. [online] Europarl.europa.eu. Available at: <https://www.europarl.europa.eu/meps/en/about> [Accessed 1 January 2021].
+
+European Parliament, 2015, Available at: https://data.europa.eu/euodp/en/data/dataset/members-of-the-european-parliament
+
+Evans, A.M. and Vink, M.P., 2012. Measuring group switching in the European Parliament: Methodology, data and trends (1979-2009). Análise social, pp.92-112.
+
+"Members". European Parliament. Retrieved 27 October 2007. [online] Avaliable at: https://www.europarl.europa.eu/about-parliament/en
+
+News.bbc.co.uk. 2021. BBC NEWS | World | Europe | Who's Who In EU's New Far-Right Group. [online] Available at: <http://news.bbc.co.uk/2/hi/europe/6249513.stm> [Accessed 7 January 2021].
+
+Political groups of the EP, 2011, Konrad Adenauer Stiftung. [Archived online] Available at: https://web.archive.org/web/20110517163147/http://www.kas.de/wf/de/71.4504/
+ 
